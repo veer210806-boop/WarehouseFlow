@@ -4,7 +4,7 @@
   "description": "WarehouseFlow — Smart Inventory & Warehouse Management System",
   "type": "module",
   "scripts": {
-    "build": "cd client && npm install && npm run build",
+    "build": "node build.js",
     "start": "node server/server.js",
     "server": "node server/server.js",
     "client": "npm run dev --prefix client",
