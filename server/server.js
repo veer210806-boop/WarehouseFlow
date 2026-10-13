@@ -19,7 +19,7 @@ import batchRoutes from './routes/batchRoutes.js';
 dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.TEST_PORT || process.env.PORT || 5000;
 
 // Connect to Database & Auto-Seed if empty
 connectDB().then(async (connected) => {
@@ -82,6 +82,11 @@ app.post('/api/seed', async (req, res, next) => {
 // Error Handler
 app.use(errorHandler);
 
-app.listen(PORT, () => {
-  console.log(`🚀 WarehouseFlow Backend API running on http://localhost:${PORT}`);
-});
+// Listen locally when not imported as a serverless function
+if (!process.env.VERCEL) {
+  app.listen(PORT, () => {
+    console.log(`🚀 WarehouseFlow Backend API running on http://localhost:${PORT}`);
+  });
+}
+
+export default app;

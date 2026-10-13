@@ -1,7 +1,9 @@
+import mongoose from 'mongoose';
 import Supplier from '../models/Supplier.js';
 import Product from '../models/Product.js';
 import PurchaseOrder from '../models/PurchaseOrder.js';
 import { BaseService } from '../oop/BaseService.js';
+import { memoryStore } from '../config/memoryStore.js';
 
 const supplierService = new BaseService(Supplier, 'Supplier');
 
@@ -10,8 +12,17 @@ const supplierService = new BaseService(Supplier, 'Supplier');
 export async function getSuppliers(req, res, next) {
   try {
     const { search = '', active } = req.query;
-    const filter = {};
 
+    if (mongoose.connection.readyState !== 1) {
+      let list = memoryStore.getSuppliers();
+      if (search) {
+        const q = search.toLowerCase();
+        list = list.filter(s => s.name.toLowerCase().includes(q) || s.company.toLowerCase().includes(q) || s.email.toLowerCase().includes(q));
+      }
+      return res.json({ success: true, count: list.length, data: list });
+    }
+
+    const filter = {};
     if (active !== undefined) {
       filter.active = active === 'true';
     }
@@ -26,7 +37,6 @@ export async function getSuppliers(req, res, next) {
 
     const suppliers = await Supplier.find(filter).sort({ company: 1 });
 
-    // Attach product counts and active PO counts
     const suppliersWithCounts = await Promise.all(
       suppliers.map(async s => {
         const productCount = await Product.countDocuments({ supplier: s._id });
@@ -52,6 +62,12 @@ export async function getSuppliers(req, res, next) {
 // @route   GET /api/suppliers/:id
 export async function getSupplierById(req, res, next) {
   try {
+    if (mongoose.connection.readyState !== 1) {
+      const data = memoryStore.getSupplierById(req.params.id);
+      if (!data) return res.status(404).json({ success: false, message: 'Supplier not found.' });
+      return res.json({ success: true, data });
+    }
+
     const supplier = await Supplier.findById(req.params.id);
     if (!supplier) {
       return res.status(404).json({ success: false, message: 'Supplier not found.' });
@@ -79,6 +95,11 @@ export async function getSupplierById(req, res, next) {
 // @route   POST /api/suppliers
 export async function createSupplier(req, res, next) {
   try {
+    if (mongoose.connection.readyState !== 1) {
+      const created = memoryStore.createSupplier(req.body);
+      return res.status(201).json({ success: true, data: created });
+    }
+
     const supplier = await supplierService.create(req.body, {
       details: `Created new supplier: ${req.body.company || req.body.name}`,
       badge: 'SUCCESS'
@@ -93,6 +114,12 @@ export async function createSupplier(req, res, next) {
 // @route   PUT /api/suppliers/:id
 export async function updateSupplier(req, res, next) {
   try {
+    if (mongoose.connection.readyState !== 1) {
+      const updated = memoryStore.updateSupplier(req.params.id, req.body);
+      if (!updated) return res.status(404).json({ success: false, message: 'Supplier not found.' });
+      return res.json({ success: true, data: updated });
+    }
+
     const supplier = await supplierService.update(req.params.id, req.body, {
       details: `Updated supplier details: ${req.body.company || req.body.name || req.params.id}`,
       badge: 'INFO'
@@ -107,9 +134,13 @@ export async function updateSupplier(req, res, next) {
 // @route   DELETE /api/suppliers/:id
 export async function deleteSupplier(req, res, next) {
   try {
-    // Unlink products associated with this supplier
-    await Product.updateMany({ supplier: req.params.id }, { $set: { supplier: null } });
+    if (mongoose.connection.readyState !== 1) {
+      const ok = memoryStore.deleteSupplier(req.params.id);
+      if (!ok) return res.status(404).json({ success: false, message: 'Supplier not found.' });
+      return res.json({ success: true, message: 'Supplier deleted successfully.' });
+    }
 
+    await Product.updateMany({ supplier: req.params.id }, { $set: { supplier: null } });
     await supplierService.delete(req.params.id, {
       details: `Deleted supplier with ID: ${req.params.id}`,
       badge: 'DANGER'
@@ -124,7 +155,12 @@ export async function deleteSupplier(req, res, next) {
 // @route   GET /api/suppliers/scorecards
 export async function getSupplierScorecards(req, res, next) {
   try {
-    const suppliers = await Supplier.find({ active: true }).sort({ rating: -1 });
+    let suppliers = [];
+    if (mongoose.connection.readyState === 1) {
+      suppliers = await Supplier.find({ active: true }).sort({ rating: -1 });
+    } else {
+      suppliers = memoryStore.getSuppliers();
+    }
 
     const totalSuppliers = suppliers.length;
     const avgOnTime = totalSuppliers > 0
@@ -157,13 +193,22 @@ export async function getSupplierScorecards(req, res, next) {
 // @route   POST /api/suppliers/:id/inspection
 export async function recordQualityInspection(req, res, next) {
   try {
+    if (mongoose.connection.readyState !== 1) {
+      const s = memoryStore.suppliers.find(x => String(x._id) === String(req.params.id));
+      if (!s) return res.status(404).json({ success: false, message: 'Supplier not found' });
+      return res.json({
+        success: true,
+        message: `Inspection recorded for ${s.company}!`,
+        data: s
+      });
+    }
+
     const supplier = await Supplier.findById(req.params.id);
     if (!supplier) {
       return res.status(404).json({ success: false, message: 'Supplier not found' });
     }
 
-    const { wasOnTime = true, totalUnits = 50, damagedUnits = 0, priceHikePercent = 0, notes } = req.body;
-
+    const { wasOnTime = true, totalUnits = 50, damagedUnits = 0, priceHikePercent = 0 } = req.body;
     const updatedFields = (await import('../oop/SupplierScorecardEngine.js')).default.applyDeliveryInspection(
       supplier,
       { wasOnTime: Boolean(wasOnTime), totalUnits: Number(totalUnits), damagedUnits: Number(damagedUnits), priceHikePercent: Number(priceHikePercent) }

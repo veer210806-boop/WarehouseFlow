@@ -1,13 +1,20 @@
+import mongoose from 'mongoose';
 import { orderManager } from '../oop/OrderManager.js';
 import PurchaseOrder from '../models/PurchaseOrder.js';
+import { memoryStore } from '../config/memoryStore.js';
 
 // @desc    Get all purchase orders
 // @route   GET /api/orders
 export async function getOrders(req, res, next) {
   try {
     const { status, supplier, search } = req.query;
-    const filter = {};
 
+    if (mongoose.connection.readyState !== 1) {
+      const orders = memoryStore.getOrders(status, supplier, search);
+      return res.json({ success: true, count: orders.length, data: orders });
+    }
+
+    const filter = {};
     if (status && status !== 'ALL') {
       filter.status = status.toUpperCase();
     }
@@ -29,6 +36,12 @@ export async function getOrders(req, res, next) {
 // @route   GET /api/orders/:id
 export async function getOrderById(req, res, next) {
   try {
+    if (mongoose.connection.readyState !== 1) {
+      const order = memoryStore.getOrderById(req.params.id);
+      if (!order) return res.status(404).json({ success: false, message: 'Order not found.' });
+      return res.json({ success: true, data: order });
+    }
+
     const order = await orderManager.getOrderById(req.params.id);
     res.json({ success: true, data: order });
   } catch (error) {
@@ -40,6 +53,11 @@ export async function getOrderById(req, res, next) {
 // @route   POST /api/orders
 export async function createOrder(req, res, next) {
   try {
+    if (mongoose.connection.readyState !== 1) {
+      const order = memoryStore.createOrder(req.body);
+      return res.status(201).json({ success: true, data: order });
+    }
+
     const orderData = {
       ...req.body,
       createdBy: req.user ? req.user._id : null
@@ -58,6 +76,15 @@ export async function updateOrderStatus(req, res, next) {
     const { status } = req.body;
     const user = req.user ? req.user.name : 'Warehouse Operator';
 
+    if (mongoose.connection.readyState !== 1) {
+      const order = memoryStore.updateOrderStatus(req.params.id, status, user);
+      return res.json({
+        success: true,
+        message: `Purchase Order status updated to ${status}.`,
+        data: order
+      });
+    }
+
     const order = await orderManager.updateStatus(req.params.id, status, { user });
     res.json({
       success: true,
@@ -73,6 +100,12 @@ export async function updateOrderStatus(req, res, next) {
 // @route   DELETE /api/orders/:id
 export async function deleteOrder(req, res, next) {
   try {
+    if (mongoose.connection.readyState !== 1) {
+      const ok = memoryStore.deleteOrder(req.params.id);
+      if (!ok) return res.status(404).json({ success: false, message: 'Order not found.' });
+      return res.json({ success: true, message: 'Purchase Order deleted.' });
+    }
+
     const order = await PurchaseOrder.findById(req.params.id);
     if (!order) {
       return res.status(404).json({ success: false, message: 'Order not found.' });

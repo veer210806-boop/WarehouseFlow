@@ -1,5 +1,7 @@
+import mongoose from 'mongoose';
 import { inventoryManager } from '../oop/InventoryManager.js';
 import InventoryLog from '../models/InventoryLog.js';
+import { memoryStore } from '../config/memoryStore.js';
 
 // @desc    Process Stock In (Receiving goods)
 // @route   POST /api/inventory/in
@@ -7,6 +9,20 @@ export async function stockIn(req, res, next) {
   try {
     const { productId, quantity, reason, referenceNumber, costPrice } = req.body;
     const user = req.user ? req.user.name : 'Warehouse Operator';
+
+    if (mongoose.connection.readyState !== 1) {
+      const result = memoryStore.stockIn(productId, quantity, {
+        reason,
+        referenceNumber,
+        user,
+        costPrice
+      });
+      return res.json({
+        success: true,
+        message: `Successfully received ${quantity} units into inventory.`,
+        data: result
+      });
+    }
 
     const result = await inventoryManager.stockIn(productId, quantity, {
       reason,
@@ -32,6 +48,19 @@ export async function stockOut(req, res, next) {
     const { productId, quantity, reason, referenceNumber } = req.body;
     const user = req.user ? req.user.name : 'Warehouse Operator';
 
+    if (mongoose.connection.readyState !== 1) {
+      const result = memoryStore.stockOut(productId, quantity, {
+        reason,
+        referenceNumber,
+        user
+      });
+      return res.json({
+        success: true,
+        message: `Successfully dispatched ${quantity} units.`,
+        data: result
+      });
+    }
+
     const result = await inventoryManager.stockOut(productId, quantity, {
       reason,
       referenceNumber,
@@ -55,6 +84,18 @@ export async function adjustStock(req, res, next) {
     const { productId, newStock, reason } = req.body;
     const user = req.user ? req.user.name : 'Warehouse Manager';
 
+    if (mongoose.connection.readyState !== 1) {
+      const result = memoryStore.adjustStock(productId, newStock, {
+        reason,
+        user
+      });
+      return res.json({
+        success: true,
+        message: `Stock level adjusted to ${newStock} units.`,
+        data: result
+      });
+    }
+
     const result = await inventoryManager.adjustStock(productId, newStock, {
       reason,
       user
@@ -75,8 +116,18 @@ export async function adjustStock(req, res, next) {
 export async function getLogs(req, res, next) {
   try {
     const { type, productId, limit = 100, page = 1 } = req.query;
-    const filter = {};
 
+    if (mongoose.connection.readyState !== 1) {
+      const logs = memoryStore.getLogs(type, productId);
+      return res.json({
+        success: true,
+        count: logs.length,
+        total: logs.length,
+        data: logs
+      });
+    }
+
+    const filter = {};
     if (type && type !== 'ALL') {
       filter.type = type.toUpperCase();
     }

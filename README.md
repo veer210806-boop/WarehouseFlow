@@ -72,9 +72,22 @@ npm run dev      # Runs frontend on http://localhost:5173
 
 ---
 
+## 🌐 Free Live Demo on Vercel (1-Click Deployment)
+
+This repository is pre-configured with `vercel.json` and a built-in serverless fallback engine for instant free live deployment:
+
+1. Sign in to [Vercel](https://vercel.com/signup) using your GitHub account (`veer210806-boop`).
+2. Click **"Add New..."** → **"Project"**.
+3. Select **`WarehouseFlow`** from your repository list and click **"Import"**.
+4. Click the blue **"Deploy"** button.
+5. In ~1 minute, your free live demo link will be generated!
+
+---
+
 ## 🔑 Demo Login
 
 | Role | Email | Password |
 | :--- | :--- | :--- |
 | **Administrator** | `admin@warehouseflow.com` | `admin123` |
 | **Warehouse Manager** | `manager@warehouseflow.com` | `admin123` |
+*(Instant 1-click demo login buttons are also available on the login page)*

@@ -1,8 +1,10 @@
+import mongoose from 'mongoose';
 import Product from '../models/Product.js';
 import Supplier from '../models/Supplier.js';
 import { BaseService } from '../oop/BaseService.js';
 import { SearchAndSortDSA } from '../oop/SearchAndSortDSA.js';
 import { ReorderEngine } from '../oop/ReorderEngine.js';
+import { memoryStore } from '../config/memoryStore.js';
 
 const productService = new BaseService(Product, 'Product');
 
@@ -22,7 +24,12 @@ export async function getProducts(req, res, next) {
       all = 'false'
     } = req.query;
 
-    const allProducts = await Product.find().populate('supplier').lean({ virtuals: true });
+    let allProducts = [];
+    if (mongoose.connection.readyState === 1) {
+      allProducts = await Product.find().populate('supplier').lean({ virtuals: true });
+    } else {
+      allProducts = memoryStore.getProducts();
+    }
 
     // 1. Run DSA Filter Engine
     const filtered = SearchAndSortDSA.filterProducts(allProducts, {
@@ -58,7 +65,13 @@ export async function getProducts(req, res, next) {
 // @route   GET /api/products/:id
 export async function getProductById(req, res, next) {
   try {
-    const product = await Product.findById(req.params.id).populate('supplier');
+    let product = null;
+    if (mongoose.connection.readyState === 1) {
+      product = await Product.findById(req.params.id).populate('supplier');
+    } else {
+      product = memoryStore.getProductById(req.params.id);
+    }
+
     if (!product) {
       return res.status(404).json({ success: false, message: 'Product not found.' });
     }
@@ -77,7 +90,12 @@ export async function getProductById(req, res, next) {
 export async function searchBySKU(req, res, next) {
   try {
     const targetSKU = req.params.sku;
-    const allProducts = await Product.find().sort({ sku: 1 }).populate('supplier').lean();
+    let allProducts = [];
+    if (mongoose.connection.readyState === 1) {
+      allProducts = await Product.find().sort({ sku: 1 }).populate('supplier').lean();
+    } else {
+      allProducts = memoryStore.getProducts().sort((a, b) => (a.sku || '').localeCompare(b.sku || ''));
+    }
     
     // Execute O(log N) Binary Search on sorted SKU array
     const matched = SearchAndSortDSA.binarySearch(allProducts, 'sku', targetSKU);
@@ -97,6 +115,26 @@ export async function searchBySKU(req, res, next) {
 export async function createProduct(req, res, next) {
   try {
     const { sku, name, category, costPrice, sellingPrice, stock, minStockAlert, safetyStock, weeklySales, supplier, unit, location, hsnCode, gstRate } = req.body;
+
+    if (mongoose.connection.readyState !== 1) {
+      const created = memoryStore.createProduct({
+        sku: sku.toUpperCase().trim(),
+        name,
+        category: category || 'General',
+        costPrice: Number(costPrice),
+        sellingPrice: Number(sellingPrice),
+        stock: Number(stock) || 0,
+        minStockAlert: Number(minStockAlert) || 15,
+        safetyStock: Number(safetyStock) || 5,
+        weeklySales: Number(weeklySales) || 10,
+        supplier,
+        unit: unit || 'Pieces',
+        location: location || 'Main Warehouse',
+        hsnCode: hsnCode || 'HSN 8479',
+        gstRate: Number(gstRate || 18)
+      });
+      return res.status(201).json({ success: true, data: created });
+    }
 
     const existingSKU = await Product.findOne({ sku: sku.toUpperCase().trim() });
     if (existingSKU) {
@@ -134,6 +172,12 @@ export async function createProduct(req, res, next) {
 // @route   PUT /api/products/:id
 export async function updateProduct(req, res, next) {
   try {
+    if (mongoose.connection.readyState !== 1) {
+      const updated = memoryStore.updateProduct(req.params.id, req.body);
+      if (!updated) return res.status(404).json({ success: false, message: 'Product not found.' });
+      return res.json({ success: true, data: updated });
+    }
+
     const updated = await productService.update(req.params.id, req.body, {
       details: `Updated product details for ID: ${req.params.id}`,
       badge: 'INFO'
@@ -149,6 +193,12 @@ export async function updateProduct(req, res, next) {
 // @route   DELETE /api/products/:id
 export async function deleteProduct(req, res, next) {
   try {
+    if (mongoose.connection.readyState !== 1) {
+      const ok = memoryStore.deleteProduct(req.params.id);
+      if (!ok) return res.status(404).json({ success: false, message: 'Product not found.' });
+      return res.json({ success: true, message: 'Product deleted successfully.' });
+    }
+
     await productService.delete(req.params.id, {
       details: `Deleted product with ID: ${req.params.id}`,
       badge: 'DANGER'
@@ -163,6 +213,9 @@ export async function deleteProduct(req, res, next) {
 // @route   GET /api/products/meta/categories
 export async function getCategories(req, res, next) {
   try {
+    if (mongoose.connection.readyState !== 1) {
+      return res.json({ success: true, data: memoryStore.getCategories() });
+    }
     const categories = await Product.distinct('category');
     res.json({ success: true, data: categories });
   } catch (error) {

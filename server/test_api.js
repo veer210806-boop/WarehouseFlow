@@ -6,7 +6,7 @@ function makeRequest(path, method = 'GET', body = null, token = null) {
     const dataString = body ? JSON.stringify(body) : '';
     const options = {
       hostname: '127.0.0.1',
-      port: 5000,
+      port: 5055,
       path,
       method,
       headers: {
@@ -49,7 +49,10 @@ async function waitForServer(maxAttempts = 15) {
 async function runTests() {
   console.log('🧪 Starting WarehouseFlow Automated Integration Tests...');
 
-  const serverProcess = spawn('node', ['server.js'], { stdio: 'inherit' });
+  const serverProcess = spawn('node', ['server.js'], { 
+    stdio: 'inherit',
+    env: { ...process.env, TEST_PORT: '5055' }
+  });
 
   try {
     console.log('⏳ Waiting for Express server to initialize and connect to DB...');

@@ -1,22 +1,38 @@
+import mongoose from 'mongoose';
 import Product from '../models/Product.js';
 import PurchaseOrder from '../models/PurchaseOrder.js';
 import InventoryLog from '../models/InventoryLog.js';
 import ActivityLog from '../models/ActivityLog.js';
 import Supplier from '../models/Supplier.js';
 import { ReorderEngine } from './ReorderEngine.js';
+import { memoryStore } from '../config/memoryStore.js';
 
 export class AnalyticsEngine {
   /**
    * Generates comprehensive Dashboard Metrics & Visual Chart Datasets
    */
   static async getDashboardOverview() {
-    const [products, suppliers, pendingOrdersCount, recentActivities, recentLogs] = await Promise.all([
-      Product.find().populate('supplier'),
-      Supplier.find({ active: true }),
-      PurchaseOrder.countDocuments({ status: { $in: ['PENDING', 'APPROVED', 'IN_TRANSIT'] } }),
-      ActivityLog.find().sort({ createdAt: -1 }).limit(10),
-      InventoryLog.find().sort({ createdAt: -1 }).limit(150)
-    ]);
+    let products = [];
+    let suppliers = [];
+    let pendingOrdersCount = 0;
+    let recentActivities = [];
+    let recentLogs = [];
+
+    if (mongoose.connection.readyState === 1) {
+      [products, suppliers, pendingOrdersCount, recentActivities, recentLogs] = await Promise.all([
+        Product.find().populate('supplier'),
+        Supplier.find({ active: true }),
+        PurchaseOrder.countDocuments({ status: { $in: ['PENDING', 'APPROVED', 'IN_TRANSIT'] } }),
+        ActivityLog.find().sort({ createdAt: -1 }).limit(10),
+        InventoryLog.find().sort({ createdAt: -1 }).limit(150)
+      ]);
+    } else {
+      products = memoryStore.getProducts();
+      suppliers = memoryStore.getSuppliers();
+      pendingOrdersCount = memoryStore.orders.filter(o => ['PENDING', 'APPROVED', 'IN_TRANSIT'].includes(o.status)).length;
+      recentActivities = memoryStore.getActivities(10);
+      recentLogs = memoryStore.getLogs();
+    }
 
     // 1. KPI Aggregations
     let totalStockUnits = 0;
