@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { handleMockApiRequest } from './mockData';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '/api' : 'http://localhost:5000/api');
 
@@ -8,6 +9,45 @@ const api = axios.create({
     'Content-Type': 'application/json'
   }
 });
+
+// Configure adapter: Automatically activate client store on static demo deployments (Vercel)
+// or fallback gracefully when backend server is not running
+const defaultAdapter = axios.defaults.adapter;
+
+api.defaults.adapter = async (config) => {
+  const isVercelOrStatic = typeof window !== 'undefined' && (
+    window.location.hostname.includes('vercel.app') ||
+    window.location.hostname.includes('github.io') ||
+    (!import.meta.env.VITE_API_URL && window.location.hostname !== 'localhost') ||
+    localStorage.getItem('warehouseflow_force_mock') === 'true'
+  );
+
+  // Directly serve from client in-memory mock engine on Vercel live demo
+  if (isVercelOrStatic) {
+    return handleMockApiRequest(config);
+  }
+
+  // Otherwise, attempt real backend request
+  try {
+    const response = await defaultAdapter(config);
+    // If static server served index.html SPA fallback instead of API JSON response
+    if (typeof response.data === 'string' && (response.data.includes('<!DOCTYPE') || response.data.includes('<html'))) {
+      return handleMockApiRequest(config);
+    }
+    return response;
+  } catch (err) {
+    // If connection refused, 404, or 405 Method Not Allowed (Vercel static rewrite)
+    if (
+      !err.response ||
+      err.response.status === 404 ||
+      err.response.status === 405 ||
+      (typeof err.response?.data === 'string' && err.response.data.includes('<html'))
+    ) {
+      return handleMockApiRequest(config);
+    }
+    throw err;
+  }
+};
 
 // Request interceptor: attach token
 api.interceptors.request.use((config) => {
